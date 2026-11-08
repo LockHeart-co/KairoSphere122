@@ -216,6 +216,7 @@ alter table public.organization_members enable row level security;
 drop policy if exists org_read on public.organizations;
 create policy org_read on public.organizations for select to authenticated using((select private.is_org_member(id)));
 drop policy if exists member_read on public.organization_members;
+drop policy if exists org_create on public.organizations;
 create policy org_create on public.organizations for insert to authenticated with check(created_by=(select auth.uid()));
 create policy member_read on public.organization_members for select to authenticated using(user_id=(select auth.uid()) or (select private.is_org_member(organization_id)));
 
