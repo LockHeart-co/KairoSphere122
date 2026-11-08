@@ -228,7 +228,7 @@ begin
   execute format('drop policy if exists tenant_read on public.%I',t);
   execute format('create policy tenant_read on public.%I for select to authenticated using(private.is_org_member(organization_id))',t);
   execute format('drop policy if exists tenant_write on public.%I',t);
-  execute format('create policy tenant_write on public.%I for all to authenticated using(private.can_write_org(organization_id)) with check(public.can_write_org(organization_id))',t);
+  execute format('create policy tenant_write on public.%I for all to authenticated using(private.can_write_org(organization_id)) with check(private.can_write_org(organization_id))',t);
  end loop;
 end $$;
 grant select,insert on public.organizations to authenticated;
