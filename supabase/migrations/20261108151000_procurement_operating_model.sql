@@ -18,9 +18,9 @@ grant usage on schema private to authenticated;
 create or replace function private.is_org_member(target_org uuid)
 returns boolean language sql stable security definer set search_path=''
 as $$ select exists(select 1 from public.organization_members m where m.organization_id=target_org and m.user_id=(select auth.uid())); $$;
-create or replace function private.can_write_org(target_org uuid)
+create or replace function private.has_org_role(target_org uuid, allowed_roles text[])
 returns boolean language sql stable security definer set search_path=''
-as $$ select exists(select 1 from public.organization_members m where m.organization_id=target_org and m.user_id=(select auth.uid()) and m.role in ('owner','admin','buyer','warehouse','finance')); $$;
+as $$ select exists(select 1 from public.organization_members m where m.organization_id=target_org and m.user_id=(select auth.uid()) and m.role=any(allowed_roles)); $$;
 create or replace function private.add_org_creator_membership()
 returns trigger language plpgsql security definer set search_path=''
 as $$
@@ -28,8 +28,8 @@ begin
  insert into public.organization_members(organization_id,user_id,role) values(new.id,new.created_by,'owner');
  return new;
 end; $$;
-revoke all on function private.is_org_member(uuid),private.can_write_org(uuid),private.add_org_creator_membership() from public,anon,authenticated;
-grant execute on function private.is_org_member(uuid),private.can_write_org(uuid) to authenticated;
+revoke all on function private.is_org_member(uuid),private.has_org_role(uuid,text[]),private.add_org_creator_membership() from public,anon,authenticated;
+grant execute on function private.is_org_member(uuid),private.has_org_role(uuid,text[]) to authenticated;
 drop trigger if exists organization_creator_membership on public.organizations;
 create trigger organization_creator_membership after insert on public.organizations
 for each row execute function private.add_org_creator_membership();
@@ -221,17 +221,33 @@ create policy org_create on public.organizations for insert to authenticated wit
 create policy member_read on public.organization_members for select to authenticated using(user_id=(select auth.uid()) or (select private.is_org_member(organization_id)));
 
 do $$
-declare t text;
+declare
+ t text;
+ allowed text[];
 begin
  foreach t in array array['suppliers','products','supplier_products','supplier_contacts','warehouses','rfqs','rfq_lines','rfq_invitations','supplier_quotes','supplier_quote_lines','requisitions','requisition_lines','approvals','purchase_orders','purchase_order_lines','goods_receipts','goods_receipt_lines','inventory_movements','invoices','invoice_lines','invoice_match_exceptions','supplier_reviews','audit_events']
  loop
+  if t = any(array['goods_receipts','goods_receipt_lines','inventory_movements']) then
+   allowed := array['owner','admin','warehouse'];
+  elsif t = any(array['invoices','invoice_lines','invoice_match_exceptions']) then
+   allowed := array['owner','admin','finance'];
+  elsif t = 'audit_events' then
+   allowed := array['owner','admin'];
+  else
+   allowed := array['owner','admin','buyer'];
+  end if;
   execute format('alter table public.%I enable row level security',t);
   execute format('drop policy if exists tenant_read on public.%I',t);
-  execute format('create policy tenant_read on public.%I for select to authenticated using(private.is_org_member(organization_id))',t);
   execute format('drop policy if exists tenant_write on public.%I',t);
-  execute format('create policy tenant_write on public.%I for all to authenticated using(private.can_write_org(organization_id)) with check(private.can_write_org(organization_id))',t);
+  execute format('drop policy if exists tenant_insert on public.%I',t);
+  execute format('drop policy if exists tenant_update on public.%I',t);
+  execute format('drop policy if exists tenant_delete on public.%I',t);
+  execute format('create policy tenant_read on public.%I for select to authenticated using((select private.is_org_member(organization_id)))',t);
+  execute format('create policy tenant_insert on public.%I for insert to authenticated with check((select private.has_org_role(organization_id,%L::text[])))',t,allowed);
+  execute format('create policy tenant_update on public.%I for update to authenticated using((select private.has_org_role(organization_id,%L::text[]))) with check((select private.has_org_role(organization_id,%L::text[])))',t,allowed,allowed);
  end loop;
 end $$;
+
 grant select,insert on public.organizations to authenticated;
 grant select on public.organization_members to authenticated;
 grant select,insert,update,delete on public.suppliers,public.products,public.supplier_products,public.supplier_contacts,public.warehouses,public.rfqs,public.rfq_lines,public.rfq_invitations,public.supplier_quotes,public.supplier_quote_lines,public.requisitions,public.requisition_lines,public.approvals,public.purchase_orders,public.purchase_order_lines,public.goods_receipts,public.goods_receipt_lines,public.inventory_movements,public.invoices,public.invoice_lines,public.invoice_match_exceptions,public.supplier_reviews,public.audit_events to authenticated;

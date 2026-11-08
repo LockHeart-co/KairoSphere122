@@ -29,13 +29,48 @@ function shell(){
 }
 function field(spec){const label=el("label",{className:"field"});label.append(el("span",{text:spec.label+(spec.required?" *":"")}));let input;if(spec.type==="textarea")input=el("textarea",{name:spec.name,required:spec.required?"required":null,rows:"3"});else if(spec.type==="select"){input=el("select",{name:spec.name});for(const x of spec.options)input.append(el("option",{value:x,text:x.replaceAll("_"," ")}));}else input=el("input",{name:spec.name,type:spec.type||"text",required:spec.required?"required":null,min:spec.min,step:spec.step});label.append(input);return label;}
 async function moduleView(key){
- const item=modules[key],panel=el("div",{className:"panel"});if(key==="dashboard"){panel.innerHTML=await dashboard(supabase,state.org.id);return panel;}
+ const item=modules[key];
+ if(!item)throw new Error("Unknown workspace module.");
+ const panel=el("div",{className:"panel"});
+ if(key==="dashboard"){panel.innerHTML=await dashboard(supabase,state.org.id);return panel;}
  panel.append(el("div",{className:"section-head"},[el("div",{},[el("p",{className:"eyebrow",text:"WORKFLOW REGISTER"}),el("h1",{text:item.label}),el("p",{className:"muted",text:item.description})])]));
- const layout=el("div",{className:"module-layout"}),records=el("div",{className:"records"}),form=el("form",{className:"record-form"}),feedback=el("p",{className:"feedback"});
- for(const spec of item.fields)form.append(field(spec));const submit=el("button",{className:"primary",type:"submit",text:"Create record"});form.append(submit,feedback);
- form.addEventListener("submit",async e=>{e.preventDefault();submit.disabled=true;try{const raw=Object.fromEntries(new FormData(form));await createRecord(supabase,item.table,state.org.id,state.user.id,validate(key,raw));form.reset();msg(feedback,"Record created.");await render();}catch(err){msg(feedback,err.message);}finally{submit.disabled=false;}});
- try{const rows=await listRecords(supabase,item.table,state.org.id,item.orderBy);if(!rows.length)records.append(el("p",{className:"empty",text:"No records yet."}));else{const table=el("table"),thead=el("tr");for(const c of item.columns)thead.append(el("th",{text:c[1]}));table.append(el("thead",{},[thead]));const body=el("tbody");for(const row of rows){const tr=el("tr");for(const c of item.columns)tr.append(el("td",{text:typeof row[c[0]]==="boolean"?(row[c[0]]?"Yes":"No"):row[c[0]]??"—"}));body.append(tr);}table.append(body);records.append(el("div",{className:"table-scroll"},[table]));}}catch(err){records.append(el("p",{className:"notice error",text:err.message}));}
- layout.append(records,el("aside",{className:"form-panel"},[el("p",{className:"eyebrow",text:"NEW RECORD"}),el("h2",{text:"Add "+item.label.toLowerCase()}),form]));panel.append(layout);return panel;
+ const layout=el("div",{className:"module-layout"});
+ const records=el("div",{className:"records"});
+ if(!item.readOnly){
+  const form=el("form",{className:"record-form"});
+  const feedback=el("p",{className:"feedback"});
+  for(const spec of item.fields)form.append(field(spec));
+  const submit=el("button",{className:"primary",type:"submit",text:"Create record"});
+  form.append(submit,feedback);
+  form.addEventListener("submit",async e=>{
+   e.preventDefault();submit.disabled=true;
+   try{
+    const raw=Object.fromEntries(new FormData(form));
+    await createRecord(supabase,item.table,state.org.id,state.user.id,validate(key,raw));
+    form.reset();msg(feedback,"Record created.");await render();
+   }catch(err){msg(feedback,err.message);}finally{submit.disabled=false;}
+  });
+  layout.append(records,el("aside",{className:"form-panel"},[el("p",{className:"eyebrow",text:"NEW RECORD"}),el("h2",{text:"Add "+item.label.toLowerCase()}),form]));
+ }else{
+  layout.append(records,el("aside",{className:"form-panel"},[el("p",{className:"eyebrow",text:"LEDGER CONTROL"}),el("h2",{text:"Posting is controlled"}),el("p",{className:"muted",text:"Inventory entries are generated from accepted receiving, approved issues and authorized adjustments. Direct stock edits are disabled."})]));
+ }
+ try{
+  const rows=await listRecords(supabase,item.table,state.org.id,item.orderBy);
+  if(!rows.length)records.append(el("p",{className:"empty",text:"No records yet."}));
+  else{
+   const table=el("table"),thead=el("tr");
+   for(const c of item.columns)thead.append(el("th",{text:c[1]}));
+   table.append(el("thead",{},[thead]));
+   const body=el("tbody");
+   for(const row of rows){
+    const tr=el("tr");
+    for(const c of item.columns)tr.append(el("td",{text:typeof row[c[0]]==="boolean"?(row[c[0]]?"Yes":"No"):row[c[0]]??"—"}));
+    body.append(tr);
+   }
+   table.append(body);records.append(el("div",{className:"table-scroll"},[table]));
+  }
+ }catch(err){records.append(el("p",{className:"notice error",text:err.message}));}
+ return panel.append(layout),panel;
 }
 async function render(){const target=document.querySelector("#content");if(!target)return;target.replaceChildren(el("p",{className:"muted",text:"Loading…"}));try{target.replaceChildren(await moduleView(state.route));}catch(err){target.replaceChildren(el("p",{className:"notice error",text:err.message}));}}
 async function loadWorkspace(){const orgs=await getOrganizations(supabase);state.org=orgs[0]||null;if(!state.org){organizationScreen();return;}shell();await render();}

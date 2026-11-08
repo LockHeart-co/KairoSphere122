@@ -18,6 +18,7 @@ Supplier discovery → qualification → product catalogue → RFQ preparation �
 
 ## Controls
 - Organization membership is the tenant boundary; all operational tables use organization-scoped RLS and same-tenant foreign keys where a parent relationship exists.
+- Write roles are separated: buyers manage sourcing and purchasing, warehouse roles manage receipt/inventory records, finance roles manage invoices, and owner/admin roles administer the workspace. Read-only members cannot write. Operational records have no direct delete policy.
 - Inventory is a movement ledger. A receipt is not stock until quantities are accepted; transfers are paired movements. Balances are derived.
 - Currency remains explicit; never sum unlike currencies without a sourced FX rate and timestamp.
 - Supplier prospect is not verified. RFQ/quote is not a PO. Requisition is not approval.
