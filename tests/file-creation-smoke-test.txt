@@ -1,3 +1,0 @@
-KairoSphere file-creation smoke test
-Created to verify repository file-write capability.
-No application code or configuration was changed.
