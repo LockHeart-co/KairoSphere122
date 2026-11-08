@@ -78,6 +78,7 @@ create table if not exists public.rfqs (
 create table if not exists public.rfq_lines (
  id uuid primary key default gen_random_uuid(), organization_id uuid not null, rfq_id uuid not null, product_id uuid,
  description text not null, quantity numeric(16,3) not null check(quantity>0), unit text not null, required_by date,
+ unique(organization_id,id),
  foreign key(organization_id,rfq_id) references public.rfqs(organization_id,id) on delete cascade,
  foreign key(organization_id,product_id) references public.products(organization_id,id)
 );
@@ -140,6 +141,7 @@ create table if not exists public.purchase_order_lines (
  id uuid primary key default gen_random_uuid(), organization_id uuid not null, purchase_order_id uuid not null, product_id uuid,
  description text not null, quantity_ordered numeric(16,3) not null check(quantity_ordered>0),
  unit text not null, unit_price numeric(14,4) not null check(unit_price>=0), currency text not null,
+ unique(organization_id,id),
  foreign key(organization_id,purchase_order_id) references public.purchase_orders(organization_id,id) on delete cascade,
  foreign key(organization_id,product_id) references public.products(organization_id,id)
 );
