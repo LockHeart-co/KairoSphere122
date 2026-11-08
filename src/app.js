@@ -19,7 +19,7 @@ function authScreen(){
 function organizationScreen(){
  root.replaceChildren();const card=el("section",{className:"auth-card"});card.append(el("div",{className:"brand large"},[el("span",{className:"brand-mark",text:"K"}),el("span",{text:"KairoSphere"})]),el("p",{className:"eyebrow",text:"WORKSPACE INITIALIZATION"}),el("h1",{text:"Create your organization"}),el("p",{className:"muted",text:"Operational records will be isolated inside this organization."}));
  const form=el("form",{className:"auth-form"}),name=el("input",{name:"name",placeholder:"Organization name",required:"required",maxlength:"140"}),submit=el("button",{className:"primary",type:"submit",text:"Create workspace"}),feedback=el("p",{className:"feedback"});form.append(name,submit,feedback);
- form.addEventListener("submit",async e=>{e.preventDefault();submit.disabled=true;try{await createOrganization(supabase,name.value.trim());await loadWorkspace();}catch(err){msg(feedback,err.message);}finally{submit.disabled=false;}});card.append(form);root.append(el("div",{className:"auth-shell"},[card]));
+ form.addEventListener("submit",async e=>{e.preventDefault();submit.disabled=true;try{await createOrganization(supabase,name.value.trim(),state.user.id);await loadWorkspace();}catch(err){msg(feedback,err.message);}finally{submit.disabled=false;}});card.append(form);root.append(el("div",{className:"auth-shell"},[card]));
 }
 function shell(){
  root.replaceChildren();const frame=el("div",{className:"frame"}),side=el("aside",{className:"sidebar"});

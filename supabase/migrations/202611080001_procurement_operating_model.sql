@@ -11,28 +11,28 @@ create table if not exists public.organization_members (
  role text not null check(role in ('owner','admin','buyer','warehouse','finance','viewer')),
  created_at timestamptz not null default now(), primary key(organization_id,user_id)
 );
-create or replace function public.is_org_member(target_org uuid)
+create schema if not exists private;
+revoke all on schema private from public,anon;
+grant usage on schema private to authenticated;
+
+create or replace function private.is_org_member(target_org uuid)
 returns boolean language sql stable security definer set search_path=''
 as $$ select exists(select 1 from public.organization_members m where m.organization_id=target_org and m.user_id=(select auth.uid())); $$;
-create or replace function public.can_write_org(target_org uuid)
+create or replace function private.can_write_org(target_org uuid)
 returns boolean language sql stable security definer set search_path=''
 as $$ select exists(select 1 from public.organization_members m where m.organization_id=target_org and m.user_id=(select auth.uid()) and m.role in ('owner','admin','buyer','warehouse','finance')); $$;
-create or replace function public.create_organization(organization_name text)
-returns uuid language plpgsql security definer set search_path=''
+create or replace function private.add_org_creator_membership()
+returns trigger language plpgsql security definer set search_path=''
 as $$
-declare new_id uuid;
 begin
- if auth.uid() is null then raise exception 'Authentication required'; end if;
- if char_length(btrim(coalesce(organization_name,''))) not between 2 and 140 then raise exception 'Organization name must be 2–140 characters'; end if;
- insert into public.organizations(name,created_by) values(btrim(organization_name),auth.uid()) returning id into new_id;
- insert into public.organization_members(organization_id,user_id,role) values(new_id,auth.uid(),'owner');
- return new_id;
+ insert into public.organization_members(organization_id,user_id,role) values(new.id,new.created_by,'owner');
+ return new;
 end; $$;
-revoke all on function public.create_organization(text) from public,anon;
-grant execute on function public.create_organization(text) to authenticated;
-revoke all on function public.is_org_member(uuid) from public,anon;
-revoke all on function public.can_write_org(uuid) from public,anon;
-grant execute on function public.is_org_member(uuid),public.can_write_org(uuid) to authenticated;
+revoke all on function private.is_org_member(uuid),private.can_write_org(uuid),private.add_org_creator_membership() from public,anon,authenticated;
+grant execute on function private.is_org_member(uuid),private.can_write_org(uuid) to authenticated;
+drop trigger if exists organization_creator_membership on public.organizations;
+create trigger organization_creator_membership after insert on public.organizations
+for each row execute function private.add_org_creator_membership();
 
 create table if not exists public.suppliers (
  id uuid primary key default gen_random_uuid(), organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -214,9 +214,10 @@ from public.inventory_movements group by organization_id,warehouse_id,product_id
 alter table public.organizations enable row level security;
 alter table public.organization_members enable row level security;
 drop policy if exists org_read on public.organizations;
-create policy org_read on public.organizations for select to authenticated using(public.is_org_member(id));
+create policy org_read on public.organizations for select to authenticated using((select private.is_org_member(id)));
 drop policy if exists member_read on public.organization_members;
-create policy member_read on public.organization_members for select to authenticated using(user_id=(select auth.uid()) or public.is_org_member(organization_id));
+create policy org_create on public.organizations for insert to authenticated with check(created_by=(select auth.uid()));
+create policy member_read on public.organization_members for select to authenticated using(user_id=(select auth.uid()) or (select private.is_org_member(organization_id)));
 
 do $$
 declare t text;
@@ -225,11 +226,12 @@ begin
  loop
   execute format('alter table public.%I enable row level security',t);
   execute format('drop policy if exists tenant_read on public.%I',t);
-  execute format('create policy tenant_read on public.%I for select to authenticated using(public.is_org_member(organization_id))',t);
+  execute format('create policy tenant_read on public.%I for select to authenticated using(private.is_org_member(organization_id))',t);
   execute format('drop policy if exists tenant_write on public.%I',t);
-  execute format('create policy tenant_write on public.%I for all to authenticated using(public.can_write_org(organization_id)) with check(public.can_write_org(organization_id))',t);
+  execute format('create policy tenant_write on public.%I for all to authenticated using(private.can_write_org(organization_id)) with check(public.can_write_org(organization_id))',t);
  end loop;
 end $$;
-grant select on public.organizations,public.organization_members to authenticated;
+grant select,insert on public.organizations to authenticated;
+grant select on public.organization_members to authenticated;
 grant select,insert,update,delete on public.suppliers,public.products,public.supplier_products,public.supplier_contacts,public.warehouses,public.rfqs,public.rfq_lines,public.rfq_invitations,public.supplier_quotes,public.supplier_quote_lines,public.requisitions,public.requisition_lines,public.approvals,public.purchase_orders,public.purchase_order_lines,public.goods_receipts,public.goods_receipt_lines,public.inventory_movements,public.invoices,public.invoice_lines,public.invoice_match_exceptions,public.supplier_reviews,public.audit_events to authenticated;
 grant select on public.inventory_balances to authenticated;

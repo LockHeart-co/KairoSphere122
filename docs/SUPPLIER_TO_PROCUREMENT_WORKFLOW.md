@@ -26,3 +26,7 @@ Supplier discovery → qualification → product catalogue → RFQ preparation �
 
 ## Implementation boundary
 The current application provides authentication, organization creation, module navigation, list/create registers and a dashboard. Detailed RFQ lines, quote scoring, approval actions, receipt-to-ledger posting and invoice three-way matching are planned next increments, not yet implemented.
+
+
+## Supabase API exposure note
+Supabase's 2026 Data API exposure change means SQL grants alone may not expose newly created tables through PostgREST. After reviewing the target project's Data API settings, explicitly expose the required public tables or schema there. Do not expose the private helper schema. The organization membership helper functions live in the non-exposed private schema; only authenticated users receive execute permission for the read-only policy helpers.
