@@ -52,7 +52,7 @@ async function moduleView(key){
   });
   layout.append(records,el("aside",{className:"form-panel"},[el("p",{className:"eyebrow",text:"NEW RECORD"}),el("h2",{text:"Add "+item.label.toLowerCase()}),form]));
  }else{
-  layout.append(records,el("aside",{className:"form-panel"},[el("p",{className:"eyebrow",text:"LEDGER CONTROL"}),el("h2",{text:"Posting is controlled"}),el("p",{className:"muted",text:"Inventory entries are generated from accepted receiving, approved issues and authorized adjustments. Direct stock edits are disabled."})]));
+  layout.append(records,el("aside",{className:"form-panel"},[el("p",{className:"eyebrow",text:"LEDGER CONTROL"}),el("h2",{text:"Posting is controlled"}),el("p",{className:"muted",text:"Read-only movement history. Receipt posting, issues and adjustments are not yet automated; stock balances are derived only from movements already recorded. Direct stock edits are disabled."})]));
  }
  try{
   const rows=await listRecords(supabase,item.table,state.org.id,item.orderBy);
