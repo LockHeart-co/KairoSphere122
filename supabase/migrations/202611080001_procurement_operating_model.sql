@@ -30,6 +30,9 @@ begin
 end; $$;
 revoke all on function public.create_organization(text) from public,anon;
 grant execute on function public.create_organization(text) to authenticated;
+revoke all on function public.is_org_member(uuid) from public,anon;
+revoke all on function public.can_write_org(uuid) from public,anon;
+grant execute on function public.is_org_member(uuid),public.can_write_org(uuid) to authenticated;
 
 create table if not exists public.suppliers (
  id uuid primary key default gen_random_uuid(), organization_id uuid not null references public.organizations(id) on delete cascade,
@@ -118,7 +121,7 @@ create table if not exists public.requisition_lines (
  foreign key(organization_id,product_id) references public.products(organization_id,id)
 );
 create table if not exists public.approvals (
- id uuid primary key default gen_random_uuid(), organization_id uuid not null, record_type text not null, record_id uuid not null,
+ id uuid primary key default gen_random_uuid(), organization_id uuid not null references public.organizations(id) on delete cascade, record_type text not null, record_id uuid not null,
  decision text not null check(decision in ('approved','rejected','returned')), decided_by uuid not null references auth.users(id),
  comments text, decided_at timestamptz not null default now()
 );
@@ -198,10 +201,10 @@ create table if not exists public.supplier_reviews (
  foreign key(organization_id,supplier_id) references public.suppliers(organization_id,id)
 );
 create table if not exists public.audit_events (
- id uuid primary key default gen_random_uuid(), organization_id uuid not null, actor_id uuid references auth.users(id),
+ id uuid primary key default gen_random_uuid(), organization_id uuid not null references public.organizations(id) on delete cascade, actor_id uuid references auth.users(id),
  operation text not null, table_name text not null, record_id uuid, before_data jsonb, after_data jsonb, occurred_at timestamptz not null default now()
 );
-create or replace view public.inventory_balances as
+create or replace view public.inventory_balances with (security_invoker=true) as
 select organization_id,warehouse_id,product_id,
  sum(case when movement_type in ('receipt','adjustment_in','transfer_in') then quantity else -quantity end) quantity_on_hand
 from public.inventory_movements group by organization_id,warehouse_id,product_id;

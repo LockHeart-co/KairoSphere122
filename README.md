@@ -1,60 +1,49 @@
 # KairoSphere
 
-Industrial intelligence and trade operations workspace. The initial operating market is Suriname, with an architecture intended to support international trade workflows over time.
+**Industrial supplier intelligence, sourcing, procurement and warehouse operations.**
 
-## Current build: authenticated foundation
+KairoSphere manages the operating path from supplier discovery to purchasing, receiving, inventory control, invoice matching and supplier performance. Initial operating market: Suriname.
 
-- Responsive operations dashboard with USD and SRD totals kept separate.
-- Supabase email/password sign-up and sign-in, email verification, and session restoration.
-- Authenticated create, read, update, and delete operations for opportunities.
-- Opportunity validation in the shared domain layer.
-- Row-level security policies constrain records to their owning account.
-- Node.js tests cover domain logic and the Supabase data adapter.
+## Application modules
+- Organization-based workspace creation and authenticated access.
+- Supplier discovery, onboarding, qualification and supplier records.
+- Product catalogue and warehouse registers.
+- RFQ, supplier quotation, requisition and purchase-order registers.
+- Receiving, inventory movement ledger, invoice control and supplier reviews.
+- Operational dashboard with sourcing, purchase exposure and control queues.
+- Currency separation for USD and SRD.
+- PostgreSQL schema with tenant-aware foreign keys, row-level security and derived inventory balances.
 
-## Engineering doctrine
+## End-to-end workflow
+Supplier discovery → qualification → product catalogue → RFQ → quotation comparison → requisition → approval → purchase order → delivery → receiving and inspection → inventory ledger → invoice three-way match → settlement evidence → supplier performance.
 
-KairoSphere follows an evolution-first architecture and data-fitness policy: preserve lessons from previous implementations, not obsolete structures or unusable records. See [Evolution and Data Fitness](docs/architecture/evolution-and-data-fitness.md) and the mandatory [agent operating instructions](AGENTS.md).
+See [workflow](docs/SUPPLIER_TO_PROCUREMENT_WORKFLOW.md), [operating architecture](docs/architecture/operating-model.md), [page/route/module bindings](docs/architecture/page-route-module-bindings.md), and [data contracts](docs/architecture/data-contracts.md).
 
-## Requirements
-
-- Node.js 20.19 or later.
-- A Supabase project with the `public.opportunities` migration applied.
-
-## Configure and run locally
+## Run locally
+Requirements: Node.js 20.19+.
 
 1. Copy `.env.example` to `.env.local`.
-2. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` using the Supabase project URL and publishable key from project API settings. Browser code must only use the publishable key; never use a `service_role` or secret key.
-3. Enable email/password authentication in Supabase. Add the local Vite URL, usually `http://localhost:5173`, to the allowed redirect URLs for email verification.
-4. Run `npm install` and `npm run dev`, then open the local URL Vite prints.
-5. Run `npm test` for tests and `npm run build` to produce a production bundle.
+2. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` using the project URL and publishable key. Never place a service-role or secret key in browser code.
+3. Review and apply the timestamped SQL migrations to the intended Supabase project in order.
+4. Enable Supabase email/password authentication and allow the local and Pages URLs as email redirect destinations.
+5. Run `npm ci`, `npm test`, and `npm run dev`.
+6. Build with `npm run build`.
 
-The `.env.local` file is ignored by Git. The app uses the Supabase publishable key in browser code and never uses a service-role or secret key. A migration revokes direct execute permission on the internal `rls_auto_enable()` event-trigger function from API roles; the trigger behavior is unchanged.
+## GitHub Pages
+Configure Actions variables `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Add this URL to the Supabase Auth redirect allowlist:
 
-## GitHub Pages deployment
+`https://jakelethard-star.github.io/KairoSphere122-0605e52e/`
 
-The Pages workflow builds and tests the Vite app on pushes to `main`. Add the following repository Actions variables under **Settings → Secrets and variables → Actions → Variables** before deployment:
+## Operating controls
+- Every operational record belongs to an organization and is protected by RLS.
+- Inventory is a movement ledger; balances are derived, not manually overwritten.
+- Currencies are never silently combined or converted.
+- A supplier prospect is not a verified supplier.
+- An invoice is not marked paid without independent settlement evidence.
+- KairoSphere records payment evidence; it does not execute money movement.
+- Unknown, estimated and unverified information remains distinguishable.
 
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
+## Implementation boundary
+The current build provides the application shell, organization creation, module navigation, register/list/create screens and dashboard. Detailed RFQ line editing, quote scoring, approval actions, PO conversion, receipt-to-ledger posting and invoice three-way matching remain next implementation increments. A visible register does not imply that its full workflow automation is complete.
 
-Set the Supabase Auth redirect allowlist to include `https://jakelethard-star.github.io/KairoSphere122-0605e52e/` and the local Vite URL (`http://localhost:5173/`).
-
-## Structure
-
-```text
-.
-├── index.html
-├── src/
-│   ├── app.js
-│   ├── domain.js
-│   ├── opportunities.js
-│   ├── styles.css
-│   └── supabase.js
-├── supabase/migrations/
-├── tests/
-│   ├── domain.test.js
-│   └── opportunities.test.js
-└── package.json
-```
-
-Financial functions are recordkeeping and analysis only; the application does not execute financial transactions. Live data must be source-attributed and distinguish verified, estimated, sample, and user-entered values.
+See [retirement register](docs/engineering/retirement-register.md) for replaced components and data disposition.
