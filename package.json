@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Industrial intelligence and trade operations workspace",
+  "description": "Industrial supplier sourcing, procurement and warehouse operations workspace",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

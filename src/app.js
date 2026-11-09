@@ -1,210 +1,294 @@
-import { createOpportunity, formatMoney, summarizePipeline } from "./domain.js";
-import { createSessionRequestGuard } from "./session-guard.js";
-import { supabase, supabaseConfigured } from "./supabase.js";
-import { createUserOpportunity, deleteUserOpportunity, listOpportunities, updateUserOpportunity } from "./opportunities.js";
+import { configured, supabase } from "./core/supabase.js";
+import { modules } from "./modules/registry.js";
+import { listRecords, createRecord, createOrganization, getOrganizations } from "./data/records.js";
+import { validate } from "./domain/workflow.js";
+import { dashboard } from "./modules/dashboard.js";
 
-let opportunities = [];
-let currentUser = null;
-let authMode = "signin";
-const sessionRequestGuard = createSessionRequestGuard();
-let activeSessionTicket = sessionRequestGuard.activate(null).ticket;
-const elements = {
-  count: document.querySelector("#metric-count"), value: document.querySelector("#metric-value"), next: document.querySelector("#metric-next"),
-  table: document.querySelector("#opportunity-rows"), recordCount: document.querySelector("#opportunity-count"), form: document.querySelector("#opportunity-form"),
-  feedback: document.querySelector("#form-feedback"), today: document.querySelector("#today-label"), authPanel: document.querySelector("#auth-panel"),
-  authForm: document.querySelector("#auth-form"), authFeedback: document.querySelector("#auth-feedback"), authMode: document.querySelector("#auth-mode"),
-  authSubmit: document.querySelector("#auth-submit"), authUser: document.querySelector("#auth-user"), signOut: document.querySelector("#sign-out"),
-  authHeading: document.querySelector("#auth-heading"), notice: document.querySelector("#workspace-notice")
+const root = document.querySelector("#app");
+const state = { user: null, org: null, route: location.hash.slice(1) || "dashboard" };
+
+const el = (tag, attrs = {}, children = []) => {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (key === "text") node.textContent = value;
+    else if (key === "className") node.className = value;
+    else if (key.startsWith("on")) node.addEventListener(key.slice(2).toLowerCase(), value);
+    else if (value != null) node.setAttribute(key, value);
+  }
+  for (const child of children) {
+    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return node;
 };
-const authenticatedContent = [...document.querySelectorAll(".authenticated-content")];
-const stageLabels = { lead: "Lead", qualified: "Qualified", proposal: "Proposal", negotiation: "Negotiation" };
 
-function sessionIsCurrent(userId, ticket = activeSessionTicket) {
-  return currentUser?.id === userId && sessionRequestGuard.isCurrent(ticket);
-}
+const msg = (node, text) => { node.textContent = text; };
 
-function feedback(element, message, kind = "") {
-  element.textContent = message;
-  element.className = `form-feedback ${kind}`.trim();
-}
-
-function showUser(user) {
-  const signedIn = Boolean(user);
-  const { changed, ticket } = sessionRequestGuard.activate(user?.id ?? null);
-  currentUser = user;
-  activeSessionTicket = ticket;
-  elements.authPanel.hidden = signedIn || !supabaseConfigured;
-  authenticatedContent.forEach(section => { section.hidden = !signedIn; });
-  elements.signOut.hidden = !signedIn;
-  elements.authUser.textContent = user?.email ?? "";
-
-  if (!signedIn) {
-    opportunities = [];
-    render();
-    return;
-  }
-
-  if (changed) void refreshOpportunities(ticket);
-}
-
-async function refreshOpportunities(ticket) {
-  try {
-    const records = await listOpportunities(supabase);
-    if (!sessionRequestGuard.isCurrent(ticket)) return;
-    opportunities = records;
-    render();
-  } catch (error) {
-    if (sessionRequestGuard.isCurrent(ticket)) {
-      feedback(elements.feedback, `Could not load opportunities: ${error.message}`, "error");
-    }
-  }
-}
-
-function render() {
-  const summary = summarizePipeline(opportunities);
-  elements.count.textContent = String(summary.count);
-  elements.value.textContent = `${formatMoney(summary.totals.USD, "USD")} USD · ${formatMoney(summary.totals.SRD, "SRD")} SRD`;
-  elements.next.textContent = String(opportunities.filter(item => item.stage !== "negotiation").length);
-  elements.recordCount.textContent = `${summary.count} record${summary.count === 1 ? "" : "s"}`;
-  elements.table.replaceChildren();
-  if (!opportunities.length) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 5;
-    cell.className = "empty-state";
-    cell.textContent = "No opportunities yet. Add one to begin.";
-    row.append(cell);
-    elements.table.append(row);
-    return;
-  }
-  for (const item of opportunities) {
-    const row = document.createElement("tr");
-    const name = document.createElement("td");
-    const stage = document.createElement("td");
-    const value = document.createElement("td");
-    const status = document.createElement("td");
-    const actions = document.createElement("td");
-    name.textContent = item.name;
-    const stageBadge = document.createElement("span");
-    stageBadge.className = `stage stage-${item.stage}`;
-    stageBadge.textContent = stageLabels[item.stage];
-    stage.append(stageBadge);
-    value.textContent = formatMoney(item.amount, item.currency);
-    status.innerHTML = '<span class="data-tag data-user">Private</span>';
-    const edit = document.createElement("button");
-    edit.type = "button"; edit.className = "row-action"; edit.textContent = "Edit";
-    edit.addEventListener("click", () => void editOpportunity(item));
-    const remove = document.createElement("button");
-    remove.type = "button"; remove.className = "row-action danger"; remove.textContent = "Delete";
-    remove.addEventListener("click", () => void removeOpportunity(item));
-    actions.append(edit, remove);
-    row.append(name, stage, value, status, actions);
-    elements.table.append(row);
-  }
-}
-
-async function editOpportunity(item) {
-  const userId = currentUser?.id;
-  const ticket = activeSessionTicket;
-  if (!userId) return;
-  const name = prompt("Opportunity name", item.name);
-  if (name === null) return;
-  const stage = prompt("Stage (lead, qualified, proposal, negotiation)", item.stage);
-  if (stage === null) return;
-  const amount = prompt("Estimated value", String(item.amount));
-  if (amount === null) return;
-  const currency = prompt("Currency (USD or SRD)", item.currency);
-  if (currency === null) return;
-  try {
-    const valid = createOpportunity({ ...item, name, stage, amount, currency });
-    const saved = await updateUserOpportunity(supabase, item.id, valid);
-    if (!sessionIsCurrent(userId, ticket)) return;
-    opportunities = opportunities.map(record => record.id === item.id ? saved : record);
-    render();
-  } catch (error) {
-    if (sessionIsCurrent(userId, ticket)) feedback(elements.feedback, error.message, "error");
-  }
-}
-
-async function removeOpportunity(item) {
-  const userId = currentUser?.id;
-  const ticket = activeSessionTicket;
-  if (!userId) return;
-  if (!confirm(`Delete “${item.name}”?`)) return;
-  try {
-    await deleteUserOpportunity(supabase, item.id);
-    if (!sessionIsCurrent(userId, ticket)) return;
-    opportunities = opportunities.filter(record => record.id !== item.id);
-    render();
-  } catch (error) {
-    if (sessionIsCurrent(userId, ticket)) feedback(elements.feedback, error.message, "error");
-  }
-}
-
-elements.form.addEventListener("submit", async event => {
-  event.preventDefault();
-  const userId = currentUser?.id;
-  const ticket = activeSessionTicket;
-  if (!userId) return;
-  const formData = new FormData(elements.form);
-  try {
-    const opportunity = await createUserOpportunity(supabase, userId, {
-      name: formData.get("name"), stage: formData.get("stage"), amount: formData.get("amount"), currency: formData.get("currency")
-    });
-    if (!sessionIsCurrent(userId, ticket)) return;
-    opportunities = [opportunity, ...opportunities];
-    render(); elements.form.reset();
-    feedback(elements.feedback, "Opportunity saved to your account.", "success");
-  } catch (error) {
-    if (sessionIsCurrent(userId, ticket)) feedback(elements.feedback, error.message, "error");
-  }
-});
-
-elements.authMode.addEventListener("click", () => {
-  authMode = authMode === "signin" ? "signup" : "signin";
-  const signup = authMode === "signup";
-  elements.authHeading.textContent = signup ? "Create your account" : "Sign in to KairoSphere";
-  elements.authSubmit.textContent = signup ? "Create account" : "Sign in";
-  elements.authMode.textContent = signup ? "Back to sign in" : "Create account";
-  document.querySelector("#auth-password").autocomplete = signup ? "new-password" : "current-password";
-  feedback(elements.authFeedback, "");
-});
-
-elements.authForm.addEventListener("submit", async event => {
-  event.preventDefault();
-  if (!supabase) return;
-  const data = new FormData(elements.authForm);
-  const credentials = { email: data.get("email"), password: data.get("password") };
-  elements.authSubmit.disabled = true;
-  try {
-    if (authMode === "signup") {
-      const { data: result, error } = await supabase.auth.signUp({ ...credentials, options: { emailRedirectTo: new URL(import.meta.env.BASE_URL, window.location.origin).href } });
-      if (error) throw error;
-      if (result.session) showUser(result.user);
-      else feedback(elements.authFeedback, "Check your email to verify your account, then sign in.", "success");
-    } else {
-      const { error } = await supabase.auth.signInWithPassword(credentials);
-      if (error) throw error;
-    }
-  } catch (error) { feedback(elements.authFeedback, error.message, "error"); }
-  finally { elements.authSubmit.disabled = false; }
-});
-
-elements.signOut.addEventListener("click", async () => {
-  const { error } = await supabase.auth.signOut();
-  if (error) feedback(elements.authFeedback, error.message, "error");
-});
-
-elements.today.textContent = new Intl.DateTimeFormat("en", { weekday: "short", day: "numeric", month: "short", year: "numeric" }).format(new Date());
-if (!supabaseConfigured) {
-  elements.authPanel.hidden = true;
-  elements.notice.innerHTML = "<strong>Configuration required</strong><span>Set VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY in .env.local, then restart the development server.</span>";
-  feedback(elements.authFeedback, "Supabase environment variables are missing.", "error");
-} else {
-  // Supabase emits INITIAL_SESSION after restoring persisted authentication.
-  // Defer data access until this synchronous auth callback has returned.
-  supabase.auth.onAuthStateChange((_event, session) => {
-    setTimeout(() => showUser(session?.user ?? null), 0);
+function authScreen() {
+  root.replaceChildren();
+  const card = el("section", { className: "auth-card" });
+  card.append(
+    el("div", { className: "brand large" }, [
+      el("span", { className: "brand-mark", text: "K" }),
+      el("span", { text: "KairoSphere" })
+    ]),
+    el("p", { className: "eyebrow", text: "INDUSTRIAL TRADE OPERATIONS" }),
+    el("h1", { text: "The supply chain, in one workspace." }),
+    el("p", { className: "muted", text: "Supplier intelligence, sourcing, procurement, receiving and inventory control." })
+  );
+  const form = el("form", { className: "auth-form" });
+  const email = el("input", { type: "email", name: "email", placeholder: "Email", required: "required" });
+  const password = el("input", { type: "password", name: "password", placeholder: "Password", minlength: "8", required: "required" });
+  const submit = el("button", { className: "primary", type: "submit", text: "Sign in" });
+  const toggle = el("button", { className: "text-button", type: "button", text: "Create account" });
+  const feedback = el("p", { className: "feedback" });
+  let mode = "signin";
+  toggle.addEventListener("click", () => {
+    mode = mode === "signin" ? "signup" : "signin";
+    submit.textContent = mode === "signup" ? "Create account" : "Sign in";
+    toggle.textContent = mode === "signup" ? "Back to sign in" : "Create account";
   });
+  form.append(email, password, submit, toggle, feedback);
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    submit.disabled = true;
+    try {
+      const credentials = { email: email.value.trim(), password: password.value };
+      const result = mode === "signup"
+        ? await supabase.auth.signUp({ ...credentials, options: { emailRedirectTo: new URL(import.meta.env.BASE_URL, location.origin).href } })
+        : await supabase.auth.signInWithPassword(credentials);
+      if (result.error) throw result.error;
+      if (mode === "signup" && !result.data.session) msg(feedback, "Verify your email, then sign in.");
+    } catch (error) {
+      msg(feedback, error.message);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  card.append(form);
+  root.append(el("div", { className: "auth-shell" }, [card]));
 }
-render();
+
+function organizationScreen() {
+  root.replaceChildren();
+  const card = el("section", { className: "auth-card" });
+  card.append(
+    el("div", { className: "brand large" }, [
+      el("span", { className: "brand-mark", text: "K" }),
+      el("span", { text: "KairoSphere" })
+    ]),
+    el("p", { className: "eyebrow", text: "WORKSPACE INITIALIZATION" }),
+    el("h1", { text: "Create your organization" }),
+    el("p", { className: "muted", text: "Operational records will be isolated inside this organization." })
+  );
+  const form = el("form", { className: "auth-form" });
+  const name = el("input", { name: "name", placeholder: "Organization name", required: "required", maxlength: "140" });
+  const submit = el("button", { className: "primary", type: "submit", text: "Create workspace" });
+  const feedback = el("p", { className: "feedback" });
+  form.append(name, submit, feedback);
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    submit.disabled = true;
+    try {
+      await createOrganization(supabase, name.value.trim(), state.user.id);
+      await loadWorkspace();
+    } catch (error) {
+      msg(feedback, error.message);
+    } finally {
+      submit.disabled = false;
+    }
+  });
+  card.append(form);
+  root.append(el("div", { className: "auth-shell" }, [card]));
+}
+
+function shell() {
+  root.replaceChildren();
+  const frame = el("div", { className: "frame" });
+  const side = el("aside", { className: "sidebar" });
+  side.append(
+    el("a", { className: "brand", href: "#dashboard" }, [
+      el("span", { className: "brand-mark", text: "K" }),
+      el("span", { text: "KairoSphere" })
+    ]),
+    el("p", { className: "side-label", text: "OPERATIONS" })
+  );
+  const nav = el("nav", { className: "nav" });
+  for (const [key, item] of Object.entries(modules)) {
+    nav.append(el("a", { className: `nav-link${state.route === key ? " active" : ""}`, href: `#${key}` }, [
+      el("span", { className: "nav-icon", text: item.icon }),
+      el("span", { text: item.label })
+    ]));
+  }
+  side.append(nav, el("div", { className: "side-foot" }, [
+    el("span", { text: state.org?.name || "Workspace" }),
+    el("button", { className: "text-button", text: "Sign out", onClick: () => supabase.auth.signOut() })
+  ]));
+  const main = el("main", { className: "main" });
+  main.append(
+    el("header", { className: "topbar" }, [
+      el("strong", { text: modules[state.route]?.label || "Overview" }),
+      el("span", { className: "user", text: state.user?.email || "" })
+    ]),
+    el("section", { className: "content", id: "content" })
+  );
+  frame.append(side, main);
+  root.append(frame);
+}
+
+function field(spec) {
+  const label = el("label", { className: "field" });
+  label.append(el("span", { text: `${spec.label}${spec.required ? " *" : ""}` }));
+  let input;
+  if (spec.type === "textarea") {
+    input = el("textarea", { name: spec.name, required: spec.required ? "required" : null, rows: "3" });
+  } else if (spec.type === "select") {
+    input = el("select", { name: spec.name });
+    for (const option of spec.options) {
+      input.append(el("option", { value: option, text: option.replaceAll("_", " ") }));
+    }
+  } else {
+    input = el("input", {
+      name: spec.name,
+      type: spec.type || "text",
+      required: spec.required ? "required" : null,
+      min: spec.min,
+      step: spec.step
+    });
+  }
+  label.append(input);
+  return label;
+}
+
+async function moduleView(key) {
+  const item = modules[key];
+  if (!item) throw new Error("Unknown workspace module.");
+  const panel = el("div", { className: "panel" });
+  if (key === "dashboard") {
+    panel.innerHTML = await dashboard(supabase, state.org.id);
+    return panel;
+  }
+  panel.append(el("div", { className: "section-head" }, [
+    el("div", {}, [
+      el("p", { className: "eyebrow", text: "WORKFLOW REGISTER" }),
+      el("h1", { text: item.label }),
+      el("p", { className: "muted", text: item.description })
+    ])
+  ]));
+  const layout = el("div", { className: "module-layout" });
+  const records = el("div", { className: "records" });
+  if (!item.readOnly) {
+    const form = el("form", { className: "record-form" });
+    const feedback = el("p", { className: "feedback" });
+    for (const spec of item.fields) form.append(field(spec));
+    const submit = el("button", { className: "primary", type: "submit", text: "Create record" });
+    form.append(submit, feedback);
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      submit.disabled = true;
+      try {
+        const raw = Object.fromEntries(new FormData(form));
+        await createRecord(supabase, item.table, state.org.id, state.user.id, validate(key, raw));
+        form.reset();
+        msg(feedback, "Record created.");
+        await render();
+      } catch (error) {
+        msg(feedback, error.message);
+      } finally {
+        submit.disabled = false;
+      }
+    });
+    layout.append(records, el("aside", { className: "form-panel" }, [
+      el("p", { className: "eyebrow", text: "NEW RECORD" }),
+      el("h2", { text: `Add ${item.label.toLowerCase()}` }),
+      form
+    ]));
+  } else {
+    layout.append(records, el("aside", { className: "form-panel" }, [
+      el("p", { className: "eyebrow", text: "LEDGER CONTROL" }),
+      el("h2", { text: "Posting is controlled" }),
+      el("p", { className: "muted", text: "Read-only movement history. Receipt posting, issues and adjustments are not yet automated; stock balances are derived only from movements already recorded. Direct stock edits are disabled." })
+    ]));
+  }
+  try {
+    const rows = await listRecords(supabase, item.table, state.org.id, item.orderBy);
+    if (!rows.length) {
+      records.append(el("p", { className: "empty", text: "No records yet." }));
+    } else {
+      const table = el("table");
+      const header = el("tr");
+      for (const column of item.columns) header.append(el("th", { text: column[1] }));
+      table.append(el("thead", {}, [header]));
+      const body = el("tbody");
+      for (const row of rows) {
+        const tr = el("tr");
+        for (const column of item.columns) {
+          const value = row[column[0]];
+          tr.append(el("td", { text: typeof value === "boolean" ? (value ? "Yes" : "No") : value ?? "—" }));
+        }
+        body.append(tr);
+      }
+      table.append(body);
+      records.append(el("div", { className: "table-scroll" }, [table]));
+    }
+  } catch (error) {
+    records.append(el("p", { className: "notice error", text: error.message }));
+  }
+  panel.append(layout);
+  return panel;
+}
+
+async function render() {
+  const target = document.querySelector("#content");
+  if (!target) return;
+  target.replaceChildren(el("p", { className: "muted", text: "Loading…" }));
+  try {
+    target.replaceChildren(await moduleView(state.route));
+  } catch (error) {
+    target.replaceChildren(el("p", { className: "notice error", text: error.message }));
+  }
+}
+
+async function loadWorkspace() {
+  const organizations = await getOrganizations(supabase);
+  state.org = organizations[0] || null;
+  if (!state.org) {
+    organizationScreen();
+    return;
+  }
+  shell();
+  await render();
+}
+
+async function start(user) {
+  state.user = user;
+  if (!user) {
+    state.org = null;
+    authScreen();
+    return;
+  }
+  try {
+    await loadWorkspace();
+  } catch (error) {
+    root.replaceChildren(el("p", { className: "notice error", text: error.message }));
+  }
+}
+
+window.addEventListener("hashchange", () => {
+  state.route = location.hash.slice(1) || "dashboard";
+  if (state.user && state.org) {
+    shell();
+    void render();
+  }
+});
+
+async function boot() {
+  if (!configured) {
+    root.textContent = "Supabase configuration is required.";
+    return;
+  }
+  const { data: { session } } = await supabase.auth.getSession();
+  await start(session?.user || null);
+  supabase.auth.onAuthStateChange((_event, session) => queueMicrotask(() => void start(session?.user || null)));
+}
+
+void boot();

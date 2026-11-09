@@ -1,60 +1,44 @@
 # KairoSphere
 
-Industrial intelligence and trade operations workspace. The initial operating market is Suriname, with an architecture intended to support international trade workflows over time.
+Industrial supplier intelligence, sourcing, procurement and warehouse operations for Suriname, with a design intended to support international trade workflows.
 
-## Current build: authenticated foundation
+KairoSphere manages the operating path from supplier discovery through purchasing, receiving, inventory control, invoice matching and supplier performance.
 
-- Responsive operations dashboard with USD and SRD totals kept separate.
-- Supabase email/password sign-up and sign-in, email verification, and session restoration.
-- Authenticated create, read, update, and delete operations for opportunities.
-- Opportunity validation in the shared domain layer.
-- Row-level security policies constrain records to their owning account.
-- Node.js tests cover domain logic and the Supabase data adapter.
+## Application modules
 
-## Engineering doctrine
+- Organization-based workspace creation and authenticated access.
+- Supplier discovery, onboarding, qualification and supplier records.
+- Product catalogue and warehouse registers.
+- RFQ, supplier quotation, requisition and purchase-order registers.
+- Receiving, inventory movement ledger, invoice control and supplier reviews.
+- Operational dashboard with sourcing, purchase exposure and control queues.
+- Explicit currency separation and organization-scoped row-level security.
 
-KairoSphere follows an evolution-first architecture and data-fitness policy: preserve lessons from previous implementations, not obsolete structures or unusable records. See [Evolution and Data Fitness](docs/architecture/evolution-and-data-fitness.md) and the mandatory [agent operating instructions](AGENTS.md).
+## Workflow and architecture
 
-## Requirements
+Supplier discovery → qualification → product catalogue → RFQ → quotation comparison → requisition → approval → purchase order → delivery → receiving and inspection → inventory ledger → invoice three-way match → settlement evidence → supplier performance.
 
-- Node.js 20.19 or later.
-- A Supabase project with the `public.opportunities` migration applied.
+See the [workflow](docs/SUPPLIER_TO_PROCUREMENT_WORKFLOW.md), [operating architecture](docs/architecture/operating-model.md), [page/route/module bindings](docs/architecture/page-route-module-bindings.md), [data contracts](docs/architecture/data-contracts.md), [evolution and data fitness doctrine](docs/architecture/evolution-and-data-fitness.md), and [retirement register](docs/engineering/retirement-register.md).
 
-## Configure and run locally
+## Run locally
+
+Requirements: Node.js 20.19 or later.
 
 1. Copy `.env.example` to `.env.local`.
-2. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` using the Supabase project URL and publishable key from project API settings. Browser code must only use the publishable key; never use a `service_role` or secret key.
-3. Enable email/password authentication in Supabase. Add the local Vite URL, usually `http://localhost:5173`, to the allowed redirect URLs for email verification.
-4. Run `npm install` and `npm run dev`, then open the local URL Vite prints.
-5. Run `npm test` for tests and `npm run build` to produce a production bundle.
+2. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from the intended Supabase project. Browser code may use only the publishable key; never use a service-role or secret key.
+3. Review the timestamped SQL migrations and confirm the target environment before applying them. Migrations in this repository are source files; they have not necessarily been applied to any live project.
+4. Enable Supabase email/password authentication and allow the local Vite URL and Pages URL as email redirect destinations.
+5. Run `npm ci`, `npm test`, and `npm run dev`.
+6. Run `npm run build` to produce the production bundle.
 
-The `.env.local` file is ignored by Git. The app uses the Supabase publishable key in browser code and never uses a service-role or secret key. A migration revokes direct execute permission on the internal `rls_auto_enable()` event-trigger function from API roles; the trigger behavior is unchanged.
+## GitHub Pages
 
-## GitHub Pages deployment
+The Pages workflow builds and tests on pushes to `main`. Configure Actions variables `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` as appropriate for the target project. The Supabase Auth redirect allowlist must include:
 
-The Pages workflow builds and tests the Vite app on pushes to `main`. Add the following repository Actions variables under **Settings → Secrets and variables → Actions → Variables** before deployment:
+`https://jakelethard-star.github.io/KairoSphere122-0605e52e/`
 
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
+## Operating controls and implementation boundary
 
-Set the Supabase Auth redirect allowlist to include `https://jakelethard-star.github.io/KairoSphere122-0605e52e/` and the local Vite URL (`http://localhost:5173/`).
+Operational records belong to an organization and are protected by RLS. Inventory is an append-only movement ledger with derived balances; currencies are never silently combined or converted. A supplier prospect is not verified, a requisition is not approval, and an invoice is not paid without independent settlement evidence. KairoSphere records payment evidence but does not execute money movement. Unknown, estimated and unverified information remains distinguishable.
 
-## Structure
-
-```text
-.
-├── index.html
-├── src/
-│   ├── app.js
-│   ├── domain.js
-│   ├── opportunities.js
-│   ├── styles.css
-│   └── supabase.js
-├── supabase/migrations/
-├── tests/
-│   ├── domain.test.js
-│   └── opportunities.test.js
-└── package.json
-```
-
-Financial functions are recordkeeping and analysis only; the application does not execute financial transactions. Live data must be source-attributed and distinguish verified, estimated, sample, and user-entered values.
+The current application provides the authenticated shell, organization creation, module navigation, operational registers and dashboard. Detailed RFQ line editing, quote scoring, approval actions, PO conversion, receipt-to-ledger posting and invoice three-way matching remain planned increments; a visible register does not mean its full workflow is implemented.
