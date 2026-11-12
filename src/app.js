@@ -152,6 +152,8 @@ function field(spec) {
       type: spec.type || "text",
       required: spec.required ? "required" : null,
       min: spec.min,
+      max: spec.max,
+      maxlength: spec.maxLength,
       step: spec.step
     });
   }
