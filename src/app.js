@@ -1,4 +1,5 @@
 import { configured, supabase } from "./core/supabase.js";
+import { resolveAuthRedirectUrl } from "./core/auth-redirect.js";
 import { modules } from "./modules/registry.js";
 import { listRecords, createRecord, createOrganization, getOrganizations } from "./data/records.js";
 import { validate } from "./domain/workflow.js";
@@ -54,7 +55,7 @@ function authScreen() {
     try {
       const credentials = { email: email.value.trim(), password: password.value };
       const result = mode === "signup"
-        ? await supabase.auth.signUp({ ...credentials, options: { emailRedirectTo: new URL(import.meta.env.BASE_URL, location.origin).href } })
+        ? await supabase.auth.signUp({ ...credentials, options: { emailRedirectTo: resolveAuthRedirectUrl(import.meta.env.VITE_AUTH_REDIRECT_URL) } })
         : await supabase.auth.signInWithPassword(credentials);
       if (result.error) throw result.error;
       if (mode === "signup" && !result.data.session) msg(feedback, "Verify your email, then sign in.");

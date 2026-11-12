@@ -27,7 +27,7 @@ Requirements: Node.js 20.19 or later.
 1. Copy `.env.example` to `.env.local`.
 2. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` from the intended Supabase project. Browser code may use only the publishable key; never use a service-role or secret key.
 3. Review the timestamped SQL migrations and confirm the target environment before applying them. Migrations in this repository are source files; they have not necessarily been applied to any live project.
-4. Enable Supabase email/password authentication and allow the local Vite URL and Pages URL as email redirect destinations.
+4. Enable Supabase email/password authentication. The application defaults confirmation emails to the canonical GitHub Pages URL so links work when opened on another device; set `VITE_AUTH_REDIRECT_URL` only when intentionally overriding that destination. Add the Pages URL to Supabase Auth's allowed redirect URLs. Add `http://localhost:5173/**` only when testing local-origin redirects.
 5. Run `npm ci`, `npm test`, and `npm run dev`.
 6. Run `npm run build` to produce the production bundle.
 
